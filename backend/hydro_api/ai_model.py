@@ -89,7 +89,7 @@ def calculate_flood_risk(distance_cm, current_amps):
         message = "🟢 NORMAL conditions. No flood risk detected."
         status = "🟢 SAFE"
     
-    # Calculate water level percentage (inverse of distance)
+    # Calculate water level percentage (inverse of distance yess)
     water_level_percent = max(0, min(100, (200 - distance_cm) / 200 * 100))
     
     return {
