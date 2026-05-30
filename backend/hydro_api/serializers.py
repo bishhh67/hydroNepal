@@ -52,3 +52,12 @@ class ESPDataSerializer(serializers.ModelSerializer):
         from .models import ESPData
         model = ESPData
         fields = ['id', 'hydro_name', 'distance_cm', 'current_amps', 'timestamp']
+
+
+class TurbineMonitoringSerializer(serializers.ModelSerializer):
+    hydro_name = serializers.CharField(source='hydro.hydro_name', read_only=True)
+    
+    class Meta:
+        from .models import TurbineMonitoring
+        model = TurbineMonitoring
+        fields = '__all__'

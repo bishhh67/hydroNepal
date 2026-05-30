@@ -14,6 +14,8 @@ urlpatterns = [
     path('predictions/', views.get_prediction_data, name='predictions'),
     path('predictions/<int:hydro_id>/', views.get_prediction_data, name='predictions-hydro'),
     path('manual-predict/', views.manual_predict, name='manual-predict'),
+    path('turbine-data/', views.receive_turbine_data, name='turbine-data'),
+    path('turbine-data/<int:hydro_id>/', views.get_turbine_data, name='get-turbine-data'),
 ]
 
 

@@ -116,3 +116,39 @@ class ESPData(models.Model):
     
     class Meta:
         ordering = ['-timestamp']
+
+
+
+class TurbineMonitoring(models.Model):
+    monitoring_id = models.AutoField(primary_key=True)
+    hydro = models.ForeignKey(HydropowerProject, on_delete=models.CASCADE, related_name='turbine_readings')
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    # Turbine Parameters
+    turbine_rpm = models.FloatField(default=0, help_text="Turbine rotation speed in RPM")
+    vibration_level = models.FloatField(default=0, help_text="Vibration level 0-10")
+    bearing_temperature_c = models.FloatField(default=40, help_text="Bearing temperature in Celsius")
+    
+    # Oil and Lubrication
+    oil_leakage_status = models.CharField(max_length=20, default='Normal', choices=[
+        ('Normal', 'Normal'),
+        ('Minor', 'Minor Leakage'),
+        ('Moderate', 'Moderate Leakage'),
+        ('Severe', 'Severe Leakage')
+    ])
+    lubrication_status = models.CharField(max_length=20, default='Optimal', choices=[
+        ('Optimal', 'Optimal'),
+        ('Low', 'Low Oil'),
+        ('Critical', 'Critical'),
+        ('Contaminated', 'Contaminated')
+    ])
+    
+    # Performance
+    turbine_efficiency = models.FloatField(default=85, help_text="Current efficiency percentage")
+    power_output_mw = models.FloatField(default=0, help_text="Current power output in MW")
+    
+    class Meta:
+        ordering = ['-timestamp']
+    
+    def __str__(self):
+        return f"{self.hydro.hydro_name} - {self.timestamp.strftime('%Y-%m-%d %H:%M')}"

@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import JSONParser
 from django.db.models import Avg
 from datetime import datetime, timedelta
-from .models import HydropowerProject, SensorData, Alert , ESPData
+from .models import HydropowerProject, SensorData, Alert , ESPData , TurbineMonitoring
 from .serializers import *
 
 from django.views.decorators.csrf import csrf_exempt
@@ -227,3 +227,80 @@ def manual_predict(request):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+    
+
+
+@api_view(['GET', 'POST'])
+def receive_turbine_data(request):
+    """Receive turbine monitoring data from ESP or return turbine records."""
+    if request.method == 'GET':
+        hydro_id = request.query_params.get('hydro_id')
+        if hydro_id:
+            data = TurbineMonitoring.objects.filter(hydro_id=hydro_id).order_by('-timestamp').first()
+            if not data:
+                return Response([], status=200)
+            serializer = TurbineMonitoringSerializer(data)
+            return Response([serializer.data])
+
+        projects = HydropowerProject.objects.all()
+        latest_records = []
+        for project in projects:
+            latest = project.turbine_readings.first()
+            if latest:
+                latest_records.append(latest)
+
+        serializer = TurbineMonitoringSerializer(latest_records, many=True)
+        return Response(serializer.data)
+
+    try:
+        data = request.data
+        device_id = data.get('device_id')
+        
+        mapping = {
+            'hydro1': 'Upper Trishuli 1',
+            'hydro2': 'Upper Trishuli 3A',
+            'hydro3': 'Trishuli Hydropower',
+            'hydro4': 'Devighat Hydropower'
+        }
+        
+        hydro_name = mapping.get(device_id)
+        if not hydro_name:
+            return Response({'error': 'Unknown device'}, status=400)
+        
+        project = HydropowerProject.objects.get(hydro_name=hydro_name)
+        
+        turbine_data = TurbineMonitoring.objects.create(
+            hydro=project,
+            turbine_rpm=float(data.get('turbine_rpm', 0)),
+            vibration_level=float(data.get('vibration_level', 0)),
+            bearing_temperature_c=float(data.get('bearing_temperature', 0)),
+            oil_leakage_status=data.get('oil_leakage', 'Normal'),
+            lubrication_status=data.get('lubrication', 'Optimal'),
+            turbine_efficiency=float(data.get('turbine_efficiency', 85)),
+            power_output_mw=float(data.get('power_output', 0))
+        )
+        
+        return Response({'status': 'success', 'id': turbine_data.monitoring_id}, status=201)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def get_turbine_data(request, hydro_id=None):
+    """Get latest turbine monitoring data"""
+    if hydro_id:
+        data = TurbineMonitoring.objects.filter(hydro_id=hydro_id).first()
+        if not data:
+            return Response([], status=200)
+        serializer = TurbineMonitoringSerializer(data)
+        return Response([serializer.data])
+    else:
+        projects = HydropowerProject.objects.all()
+        data = []
+        for p in projects:
+            latest = p.turbine_readings.first()
+            if latest:
+                data.append(latest)
+        serializer = TurbineMonitoringSerializer(data, many=True)
+        return Response(serializer.data)
