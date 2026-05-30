@@ -42,3 +42,13 @@ class AlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alert
         fields = '__all__'
+
+
+
+class ESPDataSerializer(serializers.ModelSerializer):
+    hydro_name = serializers.CharField(source='hydro.hydro_name', read_only=True)
+    
+    class Meta:
+        from .models import ESPData
+        model = ESPData
+        fields = ['id', 'hydro_name', 'distance_cm', 'current_amps', 'timestamp']

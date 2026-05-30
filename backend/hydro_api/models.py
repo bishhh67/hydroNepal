@@ -104,3 +104,15 @@ class Alert(models.Model):
     
     class Meta:
         ordering = ['-timestamp']
+
+
+
+class ESPData(models.Model):
+    id = models.AutoField(primary_key=True)
+    hydro = models.ForeignKey(HydropowerProject, on_delete=models.CASCADE, related_name='esp_readings')
+    distance_cm = models.FloatField(default=0)
+    current_amps = models.FloatField(default=0)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-timestamp']

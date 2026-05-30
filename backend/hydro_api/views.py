@@ -1,9 +1,14 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view,parser_classes
 from rest_framework.response import Response
+from rest_framework.parsers import JSONParser
 from django.db.models import Avg
 from datetime import datetime, timedelta
-from .models import HydropowerProject, SensorData, Alert
+from .models import HydropowerProject, SensorData, Alert , ESPData
 from .serializers import *
+
+from django.views.decorators.csrf import csrf_exempt
+from .ai_model import predict_turbine_behavior, calculate_flood_risk
+
 
 @api_view(['GET'])
 def hydropower_list(request):
@@ -64,3 +69,161 @@ def basin_map_data(request):
             'alert_count': alert_count
         })
     return Response(result)
+
+
+
+
+@csrf_exempt  # ADD THIS LINE
+@api_view(['POST'])
+def receive_esp_data(request):
+    """Receive distance and current from ESP"""
+    print("=" * 50)  # ADD THIS FOR DEBUGGING
+    print("ESP DATA RECEIVED!")  # ADD THIS FOR DEBUGGING
+    print("Data:", request.data)  # ADD THIS FOR DEBUGGING
+    print("=" * 50)  # ADD THIS FOR DEBUGGING
+    
+    try:
+        data = request.data
+        device_id = data.get('device_id')
+        
+        # Map device_id to your hydropower projects
+        mapping = {
+            'hydro1': 'Upper Trishuli 1',
+            'hydro2': 'Upper Trishuli 3A', 
+            'hydro3': 'Trishuli Hydropower',
+            'hydro4': 'Devighat Hydropower'
+        }
+        
+        hydro_name = mapping.get(device_id)
+        if not hydro_name:
+            return Response({'error': 'Unknown device'}, status=400)
+        
+        project = HydropowerProject.objects.get(hydro_name=hydro_name)
+        
+        # Save ESP data
+        esp_reading = ESPData.objects.create(
+            hydro=project,
+            distance_cm=float(data.get('distance', 0)),
+            current_amps=float(data.get('current', 0))
+        )
+        
+
+         # ========== ADD THIS TO SHOW SAVED DATA ==========
+        print(f"✅ SAVED to Database:")
+        print(f"   • Hydro: {project.hydro_name}")
+        print(f"   • Distance: {distance} cm")
+        print(f"   • Current: {current} A")
+        print(f"   • Record ID: {esp_reading.id}")
+        print("="*60 + "\n")
+
+
+        return Response({'status': 'success', 'id': esp_reading.id}, status=201)
+        
+    except Exception as e:
+        print("ERROR:", str(e))  # ADD THIS FOR DEBUGGING
+        return Response({'error': str(e)}, status=500)
+    
+
+
+@api_view(['GET'])
+def get_esp_data(request, hydro_id=None):
+    """Get latest ESP readings"""
+    if hydro_id:
+        data = ESPData.objects.filter(hydro_id=hydro_id).first()
+    else:
+        # Get latest for each hydro
+        projects = HydropowerProject.objects.all()
+        data = []
+        for p in projects:
+            latest = p.esp_readings.first()
+            if latest:
+                data.append(latest)
+    
+    from .serializers import ESPDataSerializer
+    serializer = ESPDataSerializer(data, many=not hydro_id)
+    return Response(serializer.data)
+
+
+
+@api_view(['GET'])
+def get_prediction_data(request, hydro_id=None):
+    """Get flood risk and turbine prediction for latest ESP data"""
+    
+    if hydro_id:
+        # Get latest ESP reading for specific hydro
+        esp_data = ESPData.objects.filter(hydro_id=hydro_id).first()
+        if not esp_data:
+            return Response({'error': 'No ESP data found'}, status=404)
+        data_list = [esp_data]
+    else:
+        # Get latest for each hydro
+        projects = HydropowerProject.objects.all()
+        data_list = []
+        for p in projects:
+            latest = p.esp_readings.first()
+            if latest:
+                data_list.append(latest)
+    
+    results = []
+    current_time = datetime.now()
+    
+    for esp in data_list:
+        # Calculate flood risk from distance
+        flood_data = calculate_flood_risk(esp.distance_cm, esp.current_amps)
+        
+        # Predict turbine behavior from current
+        is_abnormal, confidence = predict_turbine_behavior(
+            month=current_time.month,
+            day=current_time.day,
+            hour=current_time.hour,
+            current=esp.current_amps
+        )
+        
+        results.append({
+            'hydro_id': esp.hydro.hydro_id,
+            'hydro_name': esp.hydro.hydro_name,
+            'distance_cm': esp.distance_cm,
+            'current_amps': esp.current_amps,
+            'timestamp': esp.timestamp,
+            'flood_risk': flood_data,
+            'turbine': {
+                'is_abnormal': is_abnormal,
+                'confidence': round(confidence * 100, 1) if confidence else 0,
+                'status': '⚠️ ABNORMAL' if is_abnormal else '✅ NORMAL',
+                'message': 'Turbine showing abnormal behavior. Inspection recommended.' if is_abnormal 
+                          else 'Turbine operating within normal parameters.'
+            }
+        })
+    
+    if hydro_id and results:
+        return Response(results[0])
+    return Response(results)
+
+
+@api_view(['POST'])
+def manual_predict(request):
+    """Manual prediction endpoint for testing"""
+    try:
+        data = request.data
+        distance = float(data.get('distance', 0))
+        current = float(data.get('current', 0))
+        
+        flood_data = calculate_flood_risk(distance, current)
+        now = datetime.now()
+        is_abnormal, confidence = predict_turbine_behavior(
+            month=now.month,
+            day=now.day,
+            hour=now.hour,
+            current=current
+        )
+        
+        return Response({
+            'flood_risk': flood_data,
+            'turbine': {
+                'is_abnormal': is_abnormal,
+                'confidence': round(confidence * 100, 1) if confidence else 0,
+                'status': '⚠️ ABNORMAL' if is_abnormal else '✅ NORMAL'
+            }
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
